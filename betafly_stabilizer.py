@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Betafly Optical Position Stabilization System
+Betafly Camera-Based Position Stabilization System
 Main control script for Raspberry Pi Zero
 
-This script integrates optical flow sensing with position stabilization
+This script integrates camera-based optical flow with position stabilization
 to provide autonomous position hold capabilities for the Betafly drone.
 """
 
@@ -15,7 +15,7 @@ import logging
 from typing import Optional
 import json
 
-from optical_flow_sensor import PMW3901, OpticalFlowTracker
+from camera_optical_flow import CameraOpticalFlow, AnalogCameraFlow, OpticalFlowTracker, auto_detect_camera
 from position_stabilizer import (
     StabilizationController, 
     PIDGains
@@ -44,13 +44,35 @@ class BetaflyStabilizer:
         # Load configuration
         self.config = self._load_config(config_file)
         
-        # Initialize optical flow sensor
-        logger.info("Initializing optical flow sensor...")
-        self.sensor = PMW3901(
-            spi_bus=self.config['sensor']['spi_bus'],
-            spi_device=self.config['sensor']['spi_device'],
-            rotation=self.config['sensor']['rotation']
-        )
+        # Initialize camera sensor based on type
+        camera_type = self.config.get('sensor', {}).get('type', 'csi_camera')
+        logger.info(f"Initializing camera sensor: {camera_type}")
+        
+        if camera_type == 'analog_usb':
+            self.sensor = AnalogCameraFlow(
+                device_path=self.config.get('camera', {}).get('device', '/dev/video0'),
+                width=self.config.get('camera', {}).get('width', 720),
+                height=self.config.get('camera', {}).get('height', 480),
+                deinterlace=self.config.get('camera', {}).get('deinterlace', True)
+            )
+        else:
+            # USB/CSI camera
+            camera_id = self.config.get('camera', {}).get('device', 0)
+            if camera_id == 'auto':
+                camera_id = auto_detect_camera()
+                if camera_id is None:
+                    raise RuntimeError("No camera detected")
+            
+            self.sensor = CameraOpticalFlow(
+                camera_id=camera_id,
+                width=self.config.get('camera', {}).get('width', 640),
+                height=self.config.get('camera', {}).get('height', 480),
+                fps=self.config.get('camera', {}).get('fps', 30),
+                method=self.config.get('camera', {}).get('method', 'farneback')
+            )
+        
+        # Start camera capture
+        self.sensor.start()
         
         # Initialize optical flow tracker
         self.tracker = OpticalFlowTracker(
@@ -94,9 +116,16 @@ class BetaflyStabilizer:
         """Load configuration from file or use defaults"""
         default_config = {
             'sensor': {
-                'spi_bus': 0,
-                'spi_device': 0,
+                'type': 'csi_camera',
                 'rotation': 0
+            },
+            'camera': {
+                'device': 0,
+                'width': 640,
+                'height': 480,
+                'fps': 30,
+                'method': 'farneback',
+                'deinterlace': True
             },
             'tracker': {
                 'scale_factor': 0.001,
@@ -164,8 +193,9 @@ class BetaflyStabilizer:
         logger.info("Stopping Betafly stabilization system")
         self.running = False
         
-        # Shutdown sensor
-        self.sensor.shutdown()
+        # Stop camera sensor
+        if hasattr(self.sensor, 'stop'):
+            self.sensor.stop()
         
         # Close log file
         if self.log_file:
@@ -280,7 +310,7 @@ def signal_handler(sig, frame):
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description='Betafly Optical Position Stabilization System'
+        description='Betafly Camera-Based Position Stabilization System'
     )
     parser.add_argument(
         '-c', '--config',

@@ -2,18 +2,25 @@
 
 ## Hardware Setup
 
-### 1. Connect PMW3901 Sensor to Raspberry Pi Zero
+### 1. Connect Camera to Raspberry Pi Zero
 
-| PMW3901 Pin | Pi Zero Pin | Pin Number | Function |
-|-------------|-------------|------------|----------|
-| VCC         | 3.3V        | Pin 1      | Power    |
-| GND         | Ground      | Pin 6      | Ground   |
-| MOSI        | GPIO 10     | Pin 19     | SPI MOSI |
-| MISO        | GPIO 9      | Pin 21     | SPI MISO |
-| SCLK        | GPIO 11     | Pin 23     | SPI CLK  |
-| CS          | GPIO 8      | Pin 24     | SPI CE0  |
+**For Raspberry Pi Camera (CSI) - Recommended:**
 
-**Mounting**: Sensor should face downward with clear view of ground surface.
+1. Locate the CSI camera connector on Pi Zero (between HDMI ports)
+2. Flip up the black latch on the connector
+3. Insert camera ribbon cable:
+   - Blue side facing USB port
+   - Metal contacts facing HDMI ports
+4. Push latch down to secure
+
+**Mounting**: Camera must face **downward** with clear view of ground surface.
+
+**For USB Camera:**
+
+1. Connect USB camera to Pi Zero via micro USB OTG adapter
+2. Use data port (not power port)
+
+**See [CAMERA_SETUP.md](CAMERA_SETUP.md) for detailed camera wiring and setup.**
 
 ### 2. Power Supply
 
@@ -47,15 +54,15 @@ sudo apt-get update && sudo apt-get upgrade -y
 # 2. Install dependencies
 sudo apt-get install -y python3 python3-pip python3-dev git
 
-# 3. Enable SPI
+# 3. Enable Camera interface
 sudo raspi-config
-# Interface Options -> SPI -> Enable
+# Interface Options -> Camera -> Enable
 
 # 4. Install Python packages
 pip3 install -r requirements.txt
 
 # 5. Make scripts executable
-chmod +x betafly_stabilizer.py test_sensor.py setup.sh
+chmod +x betafly_stabilizer.py betafly_stabilizer_advanced.py test_sensor.py setup.sh
 
 # 6. Reboot
 sudo reboot
@@ -63,33 +70,40 @@ sudo reboot
 
 ## Verification
 
-### 1. Test Sensor Connection
+### 1. Test Camera Connection
 
 ```bash
-./test_sensor.py --test connection
+# For CSI camera (test with libcamera)
+libcamera-still -o test.jpg
+
+# Or with legacy camera stack
+raspistill -o test.jpg
+
+# Verify camera is detected
+vcgencmd get_camera
+# Should output: supported=1 detected=1
 ```
 
-Expected output:
-```
-✓ Sensor initialized successfully
-✓ Product ID: 0x49
-```
-
-### 2. Test Motion Detection
+### 2. Test Python Camera Access
 
 ```bash
-./test_sensor.py --test motion --duration 5
+python3 -c "
+from camera_optical_flow import auto_detect_camera
+cam_id = auto_detect_camera()
+if cam_id is not None:
+    print(f'✓ Camera detected at ID: {cam_id}')
+else:
+    print('✗ No camera detected')
+"
 ```
 
-Move the sensor and verify motion values change.
-
-### 3. Test Position Tracking
+### 3. Test Optical Flow
 
 ```bash
 ./test_sensor.py --test tracking --duration 10
 ```
 
-Move sensor in a pattern and observe position integration.
+Move the camera (or object below it) and observe optical flow tracking.
 
 ## Configuration
 
@@ -160,30 +174,59 @@ sudo journalctl -u betafly-stabilizer.service -f
 
 ## Flight Controller Integration
 
-### Option A: Serial Connection (MAVLink/MSP)
+### Wiring: Pi Zero to Flight Controller
 
-1. Connect Pi TX to FC RX (telemetry/UART port)
-2. Update config:
+Connect via UART (TX/RX):
+
+```
+┌─────────────────────┬───────────────────────────────┐
+│ Pi Zero             │ Flight Controller             │
+├─────────────────────┼───────────────────────────────┤
+│ Pin 8 (GPIO14 TX)   │ RX (UART Receive)             │
+│ Pin 10 (GPIO15 RX)  │ TX (UART Transmit)            │
+│ Pin 6 (GND)         │ GND (Common Ground)           │
+└─────────────────────┴───────────────────────────────┘
+```
+
+**Important:** TX crosses to RX (TX→RX, RX→TX)
+
+### Enable UART on Pi Zero
+
+```bash
+sudo raspi-config
+# Interface Options -> Serial Port
+# - Login shell over serial: NO
+# - Serial port hardware enabled: YES
+
+# Reboot
+sudo reboot
+```
+
+### Configure Protocol
+
+**For MAVLink (ArduPilot/PX4):**
 ```json
-"output": {
-  "interface": "mavlink",
-  "port": "/dev/ttyAMA0",
-  "baudrate": 115200
+{
+  "output": {
+    "interface": "mavlink",
+    "port": "/dev/ttyAMA0",
+    "baudrate": 115200
+  }
 }
 ```
-3. Implement `_send_corrections()` method for your protocol
 
-### Option B: PWM Output
-
-1. Connect Pi GPIO pins to FC receiver inputs
-2. Update config:
+**For MSP (Betaflight/iNav):**
 ```json
-"output": {
-  "interface": "pwm"
+{
+  "output": {
+    "interface": "msp",
+    "port": "/dev/ttyAMA0",
+    "baudrate": 115200
+  }
 }
 ```
-3. Install pigpio: `sudo apt-get install pigpio python3-pigpio`
-4. Implement PWM generation in `_send_corrections()`
+
+**See [WIRING_GUIDE.md](WIRING_GUIDE.md) for complete wiring instructions and flight controller configuration.**
 
 ## Initial Flight Test
 
@@ -221,40 +264,54 @@ sudo journalctl -u betafly-stabilizer.service -f
 
 ## Troubleshooting
 
-### SPI Not Working
+### Camera Not Detected
 
 ```bash
-# Check SPI is enabled
-ls /dev/spi*
-# Should show: /dev/spidev0.0  /dev/spidev0.1
+# Check camera is enabled
+vcgencmd get_camera
+# Should show: supported=1 detected=1
 
-# Check kernel module loaded
-lsmod | grep spi
-# Should show: spi_bcm2835
+# For CSI camera, check connection
+# - Ribbon cable fully inserted
+# - Blue side facing USB port
+# - Metal contacts facing HDMI ports
 
-# If not enabled:
-sudo raspi-config
-# Interface Options -> SPI -> Enable -> Reboot
+# For USB camera
+ls /dev/video*
+# Should show: /dev/video0 or similar
+
+lsusb
+# Should show USB camera device
 ```
 
-### Sensor Not Responding
+### Camera Not Working
 
 ```bash
-# Test with spidev directly
-python3 -c "import spidev; s = spidev.SpiDev(); s.open(0,0); print('OK')"
+# Test camera capture (CSI)
+libcamera-still -o test.jpg
+# or
+raspistill -o test.jpg
 
-# Check wiring with multimeter
-# VCC should be 3.3V
-# GND should be 0V
+# Test with Python
+python3 -c "
+import cv2
+cap = cv2.VideoCapture(0)
+ret, frame = cap.read()
+print(f'Camera works: {ret}')
+if ret:
+    print(f'Resolution: {frame.shape}')
+cap.release()
+"
 ```
 
 ### Poor Tracking
 
-- Ensure good lighting (not direct sun)
-- Check surface has visible texture
-- Clean sensor lens
+- Ensure good lighting (avoid direct sunlight)
+- Check camera lens is clean
+- Verify ground surface has visible texture
 - Verify height setting is accurate
-- Reduce vibrations (add damping)
+- Reduce vibrations (add vibration damping)
+- Surface quality should be >100 for good tracking
 
 ### Permission Errors
 
