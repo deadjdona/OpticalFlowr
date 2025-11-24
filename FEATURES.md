@@ -70,6 +70,7 @@ hostname -I
 Now supports multiple camera types for optical flow:
 - **PMW3901**: Dedicated optical flow sensor (SPI) - Original
 - **Caddx Infra 256**: Infrared optical flow sensor (I2C) - **NEW!**
+- **Caddx Infra 256CA + AI Box**: Serial/TCP streaming variant with onboard height feed - **NEW!**
 - **USB Cameras**: Standard webcams
 - **CSI Cameras**: Raspberry Pi Camera Module
 - **Analog Cameras**: FPV cameras via USB capture cards
@@ -156,6 +157,30 @@ cap.release()
 4. Run: `python3 caddx_infra256.py` to test
 
 See **[CADDX_INFRA256_GUIDE.md](CADDX_INFRA256_GUIDE.md)** for complete setup guide.
+
+#### Caddx Infra 256CA + AI Box (Serial/TCP)
+```json
+{
+  "sensor": {
+    "type": "caddx_infra256ca",
+    "rotation": 0,
+    "ai_box": {
+      "connection": "auto",
+      "serial_port": "/dev/ttyUSB0",
+      "serial_baudrate": 921600,
+      "tcp_host": "",
+      "tcp_port": 8899,
+      "data_timeout": 0.25,
+      "height_scale": 1.0
+    }
+  }
+}
+```
+
+- **Auto mode**: Uses USB serial when `tcp_host` is empty. Set `connection` to `tcp` when you prefer Ethernet/Wi-Fi.
+- **Height fusion**: The AI Box streams an altitude estimate that is automatically fused into the tracker; adjust `height_scale` if the units differ.
+- **Web UI ready**: Pick *Caddx Infra 256CA + AI Box* in the Sensor tab to edit these fields without touching JSON.
+- **Debug tip**: Use `screen /dev/ttyUSB0 921600` or `nc <host> 8899` to peek at the raw AI Box stream.
 
 #### USB Camera (Webcam)
 ```json
@@ -495,6 +520,7 @@ sudo cat /dev/ttyAMA0  # Should see garbage if SBUS working
 |---------|---------|------------|------|
 | PMW3901 | 50Hz ✓ | 100Hz ✓ | 100Hz ✓ |
 | Caddx Infra 256 | 50Hz ✓ | 100Hz ✓ | 100Hz ✓ |
+| Caddx Infra 256CA + AI Box | 50Hz ✓ | 100Hz ✓ | 100Hz ✓ |
 | USB Camera 320x240 | 30Hz ✓ | 50Hz ✓ | 100Hz ✓ |
 | USB Camera 640x480 | 15Hz ⚠️ | 30Hz ✓ | 60Hz ✓ |
 | Analog 720x480 | 10Hz ⚠️ | 30Hz ✓ | 50Hz ✓ |
@@ -562,5 +588,30 @@ sudo cat /dev/ttyAMA0  # Should see garbage if SBUS working
     "deinterlace": true
   },
   "control": {"update_rate_hz": 30}
+}
+```
+
+### Configuration 5: Caddx Infra 256CA + AI Box
+```json
+{
+  "sensor": {
+    "type": "caddx_infra256ca",
+    "rotation": 0,
+    "ai_box": {
+      "connection": "serial",
+      "serial_port": "/dev/ttyUSB0",
+      "serial_baudrate": 921600,
+      "tcp_host": "",
+      "tcp_port": 8899,
+      "data_timeout": 0.25,
+      "height_scale": 1.0
+    }
+  },
+  "tracker": {
+    "scale_factor": 0.001,
+    "initial_height": 0.8
+  },
+  "control": {"update_rate_hz": 50},
+  "stick_input": {"enabled": true, "protocol": "sbus"}
 }
 ```

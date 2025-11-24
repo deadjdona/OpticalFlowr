@@ -61,8 +61,29 @@ async function loadConfig() {
 function updateConfigUI() {
     // Sensor tab
     if (config.sensor) {
+        const sensorType = config.sensor.type || 'pmw3901';
+        document.getElementById('camera-type-select').value = sensorType;
         document.getElementById('sensor-rotation').value = config.sensor.rotation || 0;
-        document.getElementById('scale-factor').value = config.tracker?.scale_factor || 0.001;
+        document.getElementById('i2c-address').value = config.sensor.i2c_address || 41;
+
+        const aiBox = config.sensor.ai_box || {};
+        document.getElementById('ai-box-connection').value = aiBox.connection || 'auto';
+        document.getElementById('ai-box-serial-port').value = aiBox.serial_port || '/dev/ttyUSB0';
+        document.getElementById('ai-box-serial-baud').value = aiBox.serial_baudrate || 921600;
+        document.getElementById('ai-box-host').value = aiBox.tcp_host || aiBox.host || '';
+        document.getElementById('ai-box-port').value = aiBox.tcp_port || aiBox.port || 8899;
+        document.getElementById('ai-box-timeout').value = aiBox.data_timeout || 0.25;
+        document.getElementById('ai-box-height-scale').value = aiBox.height_scale || 1.0;
+
+        updateCameraType();
+        updateAIBoxConnectionFields();
+    }
+    
+    if (config.tracker) {
+        document.getElementById('scale-factor').value = config.tracker.scale_factor || 0.001;
+        const height = config.tracker.initial_height || 0.5;
+        document.getElementById('height-input').value = height;
+        document.getElementById('height-slider').value = height;
     }
     
     // PID tab
@@ -96,12 +117,28 @@ function updateConfigUI() {
 // Save configuration
 async function saveConfig() {
     // Build config object from UI
+    const sensorType = document.getElementById('camera-type-select').value;
+    const aiBoxConfig = {
+        connection: document.getElementById('ai-box-connection').value,
+        serial_port: document.getElementById('ai-box-serial-port').value || '/dev/ttyUSB0',
+        serial_baudrate: parseInt(document.getElementById('ai-box-serial-baud').value) || 921600,
+        tcp_host: document.getElementById('ai-box-host').value,
+        tcp_port: parseInt(document.getElementById('ai-box-port').value) || 8899,
+        data_timeout: parseFloat(document.getElementById('ai-box-timeout').value) || 0.25,
+        height_scale: parseFloat(document.getElementById('ai-box-height-scale').value) || 1.0,
+        data_format: config.sensor?.ai_box?.data_format || 'auto',
+        height_smoothing: config.sensor?.ai_box?.height_smoothing || 0.2
+    };
+    
     const newConfig = {
         sensor: {
+            type: sensorType,
             spi_bus: config.sensor?.spi_bus || 0,
             spi_device: config.sensor?.spi_device || 0,
             rotation: parseInt(document.getElementById('sensor-rotation').value),
-            type: document.getElementById('camera-type-select').value
+            i2c_bus: config.sensor?.i2c_bus || 1,
+            i2c_address: parseInt(document.getElementById('i2c-address').value) || 41,
+            ai_box: aiBoxConfig
         },
         tracker: {
             scale_factor: parseFloat(document.getElementById('scale-factor').value),
@@ -316,17 +353,42 @@ function updateCameraType() {
     
     // Show/hide I2C address field for Caddx
     const i2cGroup = document.getElementById('i2c-address-group');
-    if (cameraType === 'caddx_infra256') {
-        i2cGroup.style.display = 'block';
-    } else {
-        i2cGroup.style.display = 'none';
+    if (i2cGroup) {
+        i2cGroup.style.display = cameraType === 'caddx_infra256' ? 'block' : 'none';
+    }
+    
+    const aiBoxGroups = document.querySelectorAll('.ai-box-group');
+    aiBoxGroups.forEach(group => {
+        group.style.display = cameraType === 'caddx_infra256ca' ? 'block' : 'none';
+    });
+    if (cameraType === 'caddx_infra256ca') {
+        updateAIBoxConnectionFields();
     }
     
     // Show/hide camera settings based on type
     const cameraTab = document.getElementById('camera-tab');
-    if (cameraType === 'pmw3901' || cameraType === 'caddx_infra256') {
-        cameraTab.style.display = 'none';
-    } else {
-        cameraTab.style.display = 'block';
+    if (cameraTab) {
+        if (cameraType === 'pmw3901' || cameraType === 'caddx_infra256' || cameraType === 'caddx_infra256ca') {
+            cameraTab.style.display = 'none';
+        } else {
+            cameraTab.style.display = 'block';
+        }
+    }
+}
+
+function updateAIBoxConnectionFields() {
+    const modeSelect = document.getElementById('ai-box-connection');
+    if (!modeSelect) {
+        return;
+    }
+    const mode = modeSelect.value;
+    const serialGroup = document.getElementById('ai-box-serial-group');
+    const networkGroup = document.getElementById('ai-box-network-group');
+    
+    if (serialGroup) {
+        serialGroup.style.display = (mode === 'serial' || mode === 'auto') ? 'block' : 'none';
+    }
+    if (networkGroup) {
+        networkGroup.style.display = (mode === 'tcp' || mode === 'auto') ? 'block' : 'none';
     }
 }

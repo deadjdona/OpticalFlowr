@@ -190,6 +190,7 @@ class OpticalFlowTracker:
         self.velocity_history_x = []
         self.velocity_history_y = []
         self.filter_window = 5
+        self.height_filter_alpha = 0.2
     
     def update(self) -> Tuple[float, float]:
         """
@@ -204,6 +205,9 @@ class OpticalFlowTracker:
         if dt < 0.001:  # Avoid division by zero
             return (self.pos_x, self.pos_y)
         
+        # Allow sensors with onboard height estimates to adjust scale in real-time
+        self._update_height_from_sensor()
+
         # Get raw motion from sensor
         delta_x, delta_y = self.sensor.get_motion()
         
@@ -249,6 +253,36 @@ class OpticalFlowTracker:
     def set_height(self, height_m: float):
         """Update height above ground for accurate scaling"""
         self.height_m = height_m
+
+    def _update_height_from_sensor(self):
+        """Pull height estimate from sensor if supported (e.g. AI Box)."""
+        height_reader = getattr(self.sensor, 'get_height_estimate', None)
+        if not callable(height_reader):
+            return
+
+        try:
+            new_height = height_reader()
+        except Exception as exc:
+            logger.debug(f"Height estimate read failed: {exc}")
+            return
+
+        if new_height is None:
+            return
+
+        try:
+            new_height = float(new_height)
+        except (ValueError, TypeError):
+            return
+
+        if new_height <= 0.05:
+            return
+
+        if self.height_m <= 0:
+            self.height_m = new_height
+            return
+
+        alpha = self.height_filter_alpha
+        self.height_m = (1 - alpha) * self.height_m + alpha * new_height
     
     def get_surface_quality(self) -> int:
         """Get surface quality from sensor"""

@@ -6,7 +6,19 @@
     "i2c_bus": 1,
     "i2c_address": 41,
     "rotation": 0,
-    "comment": "type: pmw3901, caddx_infra256, usb_camera, csi_camera, analog_usb, opencv_any. i2c_address: 41 (0x29 default for Caddx)"
+    "ai_box": {
+      "connection": "auto",
+      "serial_port": "/dev/ttyUSB0",
+      "serial_baudrate": 921600,
+      "tcp_host": "",
+      "tcp_port": 8899,
+      "data_format": "auto",
+      "data_timeout": 0.25,
+      "height_scale": 1.0,
+      "height_smoothing": 0.2,
+      "comment": "Used when sensor.type=caddx_infra256ca. auto=serial unless tcp_host set."
+    },
+    "comment": "type: pmw3901, caddx_infra256, caddx_infra256ca, usb_camera, csi_camera, analog_usb, opencv_any. i2c_address: 41 (0x29 default for Caddx)"
   },
   "tracker": {
     "scale_factor": 0.001,
