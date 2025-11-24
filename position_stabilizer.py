@@ -50,6 +50,7 @@ class PIDController:
     def update(self, setpoint: float, measured: float, current_time: Optional[float] = None) -> float:
         """
         Update PID controller and compute output
+        Optimized with derivative filtering and improved anti-windup
         
         Args:
             setpoint: Desired value
@@ -73,20 +74,28 @@ class PIDController:
         
         # Calculate time delta
         dt = current_time - self.prev_time
-        if dt <= 0:
+        if dt <= 0 or dt > 1.0:  # Reject invalid dt (> 1s likely system suspend)
+            self.prev_time = current_time
             return 0.0
         
         # Proportional term
         p_term = self.kp * error
         
-        # Integral term with anti-windup
-        self.integral += error * dt
-        self.integral = max(-self.integral_limit, min(self.integral_limit, self.integral))
+        # Integral term with conditional integration (anti-windup)
+        # Only integrate if output is not saturated
+        output_unsaturated = p_term + self.ki * self.integral
+        if abs(output_unsaturated) < max(abs(self.output_min), abs(self.output_max)):
+            self.integral += error * dt
+            self.integral = max(-self.integral_limit, min(self.integral_limit, self.integral))
         i_term = self.ki * self.integral
         
-        # Derivative term
+        # Derivative term with simple low-pass filter (alpha = 0.1)
         derivative = (error - self.prev_error) / dt
-        d_term = self.kd * derivative
+        if hasattr(self, 'filtered_derivative'):
+            self.filtered_derivative = 0.1 * derivative + 0.9 * self.filtered_derivative
+        else:
+            self.filtered_derivative = derivative
+        d_term = self.kd * self.filtered_derivative
         
         # Compute output
         output = p_term + i_term + d_term

@@ -13,6 +13,12 @@ from typing import Optional
 import json
 from threading import Thread
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 from optical_flow_sensor import PMW3901, OpticalFlowTracker
 from camera_optical_flow import CameraOpticalFlow, AnalogCameraFlow, auto_detect_camera
 from position_stabilizer import StabilizationController, PIDGains
@@ -26,12 +32,6 @@ try:
 except ImportError:
     CADDX_AVAILABLE = False
     logger.warning("Caddx Infra 256 support not available")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 
 class BetaflyStabilizerAdvanced:
@@ -290,11 +290,12 @@ class BetaflyStabilizerAdvanced:
         logger.info("System stopped")
     
     def _control_loop(self):
-        """Main control loop"""
+        """Main control loop with performance monitoring"""
         logger.info(f"Control loop running at {self.update_rate} Hz")
         
         loop_count = 0
         start_time = time.time()
+        slow_loop_count = 0
         
         while self.running:
             loop_start = time.time()
@@ -388,8 +389,12 @@ class BetaflyStabilizerAdvanced:
             sleep_time = self.update_period - loop_time
             if sleep_time > 0:
                 time.sleep(sleep_time)
-            elif loop_count % 100 == 0:
-                logger.warning(f"Control loop running slow: {loop_time*1000:.1f}ms")
+            else:
+                slow_loop_count += 1
+                # Only warn if consistently slow (not just occasional spikes)
+                if slow_loop_count > 10 and loop_count % 100 == 0:
+                    logger.warning(f"Control loop running slow: {loop_time*1000:.1f}ms (target: {self.update_period*1000:.1f}ms)")
+                    slow_loop_count = 0
     
     def _send_corrections(self, pitch: float, roll: float):
         """Send correction commands to flight controller"""

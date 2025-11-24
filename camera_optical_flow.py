@@ -165,37 +165,45 @@ class CameraOpticalFlow:
     def _calculate_farneback_flow(self, gray: np.ndarray) -> Tuple[float, float]:
         """
         Calculate optical flow using Farneback method (dense flow)
+        Optimized for performance on Raspberry Pi
         """
+        # Downsample for faster processing on Pi Zero
+        scale_factor = 0.5
+        small_gray = cv2.resize(gray, None, fx=scale_factor, fy=scale_factor, 
+                                interpolation=cv2.INTER_LINEAR)
+        small_prev = cv2.resize(self.prev_gray, None, fx=scale_factor, fy=scale_factor,
+                                interpolation=cv2.INTER_LINEAR)
+        
         flow = cv2.calcOpticalFlowFarneback(
-            self.prev_gray,
-            gray,
+            small_prev,
+            small_gray,
             None,
             pyr_scale=0.5,
-            levels=3,
+            levels=2,  # Reduced from 3 for speed
             winsize=15,
-            iterations=3,
+            iterations=2,  # Reduced from 3 for speed
             poly_n=5,
-            poly_sigma=1.2,
+            poly_sigma=1.1,
             flags=0
         )
         
         # Calculate average flow in center region (ignore edges)
-        h, w = gray.shape
+        h, w = small_gray.shape
         center_h = slice(h//4, 3*h//4)
         center_w = slice(w//4, 3*w//4)
         
         flow_center = flow[center_h, center_w]
         
-        # Average flow
-        flow_x = np.mean(flow_center[:, :, 0])
-        flow_y = np.mean(flow_center[:, :, 1])
+        # Average flow using median for robustness
+        flow_x = np.median(flow_center[:, :, 0])
+        flow_y = np.median(flow_center[:, :, 1])
         
-        # Scale to match PMW3901 output range
-        scale = 50.0
+        # Scale to match PMW3901 output range and account for downsampling
+        scale = 50.0 / scale_factor
         flow_x *= scale
         flow_y *= scale
         
-        return (flow_x, flow_y)
+        return (float(flow_x), float(flow_y))
     
     def _calculate_lucas_kanade_flow(self, gray: np.ndarray) -> Tuple[float, float]:
         """

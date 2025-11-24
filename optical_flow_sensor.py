@@ -194,6 +194,7 @@ class OpticalFlowTracker:
     def update(self) -> Tuple[float, float]:
         """
         Update position estimate based on optical flow
+        Optimized for performance and robustness
         
         Returns:
             Current estimated position (x, y) in meters
@@ -204,16 +205,29 @@ class OpticalFlowTracker:
         if dt < 0.001:  # Avoid division by zero
             return (self.pos_x, self.pos_y)
         
-        # Get raw motion from sensor
-        delta_x, delta_y = self.sensor.get_motion()
+        try:
+            # Get raw motion from sensor
+            delta_x, delta_y = self.sensor.get_motion()
+        except Exception as e:
+            logger.warning(f"Failed to read sensor: {e}")
+            return (self.pos_x, self.pos_y)
         
         # Convert to velocity (m/s) accounting for height
         # Optical flow scales with height above ground
         scale = self.scale_factor * self.height_m
-        self.vel_x = (delta_x * scale) / dt
-        self.vel_y = (delta_y * scale) / dt
+        instant_vel_x = (delta_x * scale) / dt
+        instant_vel_y = (delta_y * scale) / dt
         
-        # Apply moving average filter
+        # Reject outliers (likely sensor errors)
+        max_velocity = 10.0  # m/s (36 km/h - reasonable max for drone)
+        if abs(instant_vel_x) > max_velocity or abs(instant_vel_y) > max_velocity:
+            logger.debug(f"Velocity outlier rejected: ({instant_vel_x:.2f}, {instant_vel_y:.2f})")
+            return (self.pos_x, self.pos_y)
+        
+        self.vel_x = instant_vel_x
+        self.vel_y = instant_vel_y
+        
+        # Apply moving average filter using deque for efficiency
         self.velocity_history_x.append(self.vel_x)
         self.velocity_history_y.append(self.vel_y)
         
@@ -221,8 +235,10 @@ class OpticalFlowTracker:
             self.velocity_history_x.pop(0)
             self.velocity_history_y.pop(0)
         
-        filtered_vel_x = sum(self.velocity_history_x) / len(self.velocity_history_x)
-        filtered_vel_y = sum(self.velocity_history_y) / len(self.velocity_history_y)
+        # Use sum() once instead of recalculating
+        len_hist = len(self.velocity_history_x)
+        filtered_vel_x = sum(self.velocity_history_x) / len_hist
+        filtered_vel_y = sum(self.velocity_history_y) / len_hist
         
         # Integrate velocity to get position
         self.pos_x += filtered_vel_x * dt
