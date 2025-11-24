@@ -1,0 +1,30 @@
+# Core dependencies for Betafly Optical Stabilization System
+
+# Computer Vision
+opencv-python==4.8.1.78
+numpy==1.24.3
+
+# Raspberry Pi Camera (install with: pip install picamera2[gui])
+# Note: picamera2 requires apt packages, see setup.sh
+# picamera2==0.3.12
+
+# Hardware Control
+pigpio==1.78
+adafruit-circuitpython-pca9685==3.4.10
+adafruit-blinka==8.20.1
+
+# Web Interface (optional)
+flask==3.0.0
+flask-cors==4.0.0
+flask-socketio==5.3.5
+python-socketio==5.10.0
+
+# Utilities
+Pillow==10.1.0
+scipy==1.11.4
+
+# Development/Testing (optional)
+pytest==7.4.3
+pytest-cov==4.1.0
+black==23.11.0
+flake8==6.1.0
