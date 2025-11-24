@@ -17,6 +17,8 @@ from .camera import Camera
 from .tracker import OpticalTracker
 from .controller import DualAxisPIDController, PIDGains
 from .servo import ServoController, ServoConfig
+from .thermal_camera import CaddxInfra256CA, ThermalConfig, ThermalColormap
+from .thermal_tracker import ThermalTracker
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,14 @@ class StabilizerConfig:
     # Camera settings
     camera_resolution: tuple = (320, 240)
     camera_framerate: int = 20
+    
+    # Thermal camera settings (Caddx Infra 256CA)
+    use_thermal_camera: bool = False
+    thermal_port: str = '/dev/ttyUSB0'
+    thermal_baudrate: int = 115200
+    thermal_colormap: str = 'ironbow'
+    thermal_temp_range: tuple = (20.0, 40.0)
+    thermal_weight: float = 0.5  # Weight for thermal vs optical tracking
     
     # Tracker settings
     max_features: int = 50
@@ -82,6 +92,7 @@ class Stabilizer:
         
         # Initialize components
         self.camera = None
+        self.thermal_camera = None
         self.tracker = None
         self.controller = None
         self.servos = None
@@ -120,21 +131,45 @@ class Stabilizer:
         logger.info("Initializing stabilization system...")
         
         try:
-            # Initialize camera
-            self.camera = Camera(
-                resolution=self.config.camera_resolution,
-                framerate=self.config.camera_framerate
-            )
-            if not self.camera.initialize():
-                logger.error("Camera initialization failed")
-                return False
-                
-            # Initialize tracker
-            self.tracker = OpticalTracker(
-                max_features=self.config.max_features,
-                quality_level=self.config.feature_quality,
-                min_distance=self.config.min_feature_distance
-            )
+            # Initialize camera (thermal or standard)
+            if self.config.use_thermal_camera:
+                # Initialize Caddx Infra 256CA thermal camera
+                thermal_config = ThermalConfig(
+                    port=self.config.thermal_port,
+                    baudrate=self.config.thermal_baudrate,
+                    colormap=ThermalColormap(self.config.thermal_colormap),
+                    temperature_range=self.config.thermal_temp_range
+                )
+                self.thermal_camera = CaddxInfra256CA(thermal_config)
+                if not self.thermal_camera.initialize():
+                    logger.error("Thermal camera initialization failed")
+                    return False
+                    
+                # Use thermal tracker
+                self.tracker = ThermalTracker(
+                    max_features=30,  # Reduced for thermal
+                    quality_level=0.2,
+                    min_distance=15,
+                    thermal_weight=self.config.thermal_weight
+                )
+                logger.info("Using thermal camera and tracker")
+            else:
+                # Standard visible light camera
+                self.camera = Camera(
+                    resolution=self.config.camera_resolution,
+                    framerate=self.config.camera_framerate
+                )
+                if not self.camera.initialize():
+                    logger.error("Camera initialization failed")
+                    return False
+                    
+                # Standard optical tracker
+                self.tracker = OpticalTracker(
+                    max_features=self.config.max_features,
+                    quality_level=self.config.feature_quality,
+                    min_distance=self.config.min_feature_distance
+                )
+                logger.info("Using standard camera and tracker")
             
             # Initialize PID controller
             pan_gains = PIDGains(
@@ -186,7 +221,10 @@ class Stabilizer:
         self.stats['start_time'] = time.time()
         
         # Start camera capture
-        self.camera.start_capture()
+        if self.config.use_thermal_camera:
+            self.thermal_camera.start_capture()
+        else:
+            self.camera.start_capture()
         
         # Start control loop
         self.control_thread = threading.Thread(target=self._control_loop)
@@ -221,7 +259,9 @@ class Stabilizer:
             self.recording_thread.join(timeout=2.0)
             
         # Stop camera
-        if self.camera:
+        if self.config.use_thermal_camera and self.thermal_camera:
+            self.thermal_camera.stop_capture()
+        elif self.camera:
             self.camera.stop_capture()
             
         # Center and disable servos
@@ -244,21 +284,35 @@ class Stabilizer:
                 loop_start = time.time()
                 
                 # Get frame from camera
-                frame = self.camera.get_frame(timeout=0.1)
-                if frame is None:
-                    continue
+                if self.config.use_thermal_camera:
+                    thermal_frame = self.thermal_camera.get_frame(timeout=0.1)
+                    if thermal_frame is None:
+                        continue
+                    frame = thermal_frame['colorized']  # Use colorized for display
+                else:
+                    frame = self.camera.get_frame(timeout=0.1)
+                    if frame is None:
+                        continue
                     
                 self.stats['frame_count'] += 1
                 
                 # Initialize tracker on first frame
                 if not tracker_initialized:
-                    if self.tracker.initialize(frame):
-                        tracker_initialized = True
-                        logger.info("Tracker initialized")
+                    if self.config.use_thermal_camera:
+                        if self.tracker.initialize_thermal(thermal_frame):
+                            tracker_initialized = True
+                            logger.info("Thermal tracker initialized")
+                    else:
+                        if self.tracker.initialize(frame):
+                            tracker_initialized = True
+                            logger.info("Tracker initialized")
                     continue
                     
                 # Track features
-                tracking_result = self.tracker.track(frame)
+                if self.config.use_thermal_camera:
+                    tracking_result = self.tracker.track_thermal(thermal_frame)
+                else:
+                    tracking_result = self.tracker.track(frame)
                 if tracking_result is None:
                     # Try to reinitialize
                     tracker_initialized = False
@@ -297,7 +351,10 @@ class Stabilizer:
                     
                 # Callback for frame processing (e.g., visualization)
                 if self.frame_callback:
-                    annotated_frame = self.tracker.draw_features(frame)
+                    if self.config.use_thermal_camera:
+                        annotated_frame = self.tracker.draw_thermal_overlay(frame, thermal_frame)
+                    else:
+                        annotated_frame = self.tracker.draw_features(frame)
                     self.frame_callback(annotated_frame, tracking_result)
                     
                 # Record data if enabled
@@ -436,6 +493,8 @@ class Stabilizer:
         """Cleanup all resources"""
         if self.camera:
             self.camera.release()
+        if self.thermal_camera:
+            self.thermal_camera.release()
         if self.servos:
             self.servos.cleanup()
         logger.info("Cleanup complete")

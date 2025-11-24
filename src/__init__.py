@@ -11,11 +11,19 @@ from .tracker import OpticalTracker
 from .controller import PIDController
 from .servo import ServoController
 from .stabilizer import Stabilizer
+from .thermal_camera import CaddxInfra256CA, ThermalConfig, ThermalColormap
+from .thermal_tracker import ThermalTracker
+from .thermal_processing import ThermalProcessor
 
 __all__ = [
     'Camera',
     'OpticalTracker',
     'PIDController',
     'ServoController',
-    'Stabilizer'
+    'Stabilizer',
+    'CaddxInfra256CA',
+    'ThermalConfig',
+    'ThermalColormap',
+    'ThermalTracker',
+    'ThermalProcessor'
 ]

@@ -5,10 +5,12 @@ A lightweight optical position stabilization system designed for Raspberry Pi Ze
 ## Features
 
 - **Real-time Optical Tracking**: Feature-based tracking using optimized OpenCV algorithms
+- **Thermal Imaging Support**: Full support for Caddx Infra 256CA (256x192 LWIR thermal camera)
+- **Hybrid Tracking**: Fuses optical and thermal tracking for robust performance
 - **PID Control**: Multi-axis stabilization with tunable PID controllers
 - **Hardware Optimization**: Designed for Pi Zero's limited resources (512MB RAM, single-core)
 - **Low Latency**: Sub-100ms tracking and control loop
-- **Web Monitoring**: Real-time monitoring interface
+- **Web Monitoring**: Real-time monitoring interface with thermal visualization
 - **Flexible Configuration**: JSON-based configuration with hot-reload
 
 ## System Architecture
@@ -47,11 +49,14 @@ A lightweight optical position stabilization system designed for Raspberry Pi Ze
 ## Hardware Requirements
 
 - Raspberry Pi Zero W/2W
-- Pi Camera Module (v1.3 or v2)
+- Camera Options:
+  - Pi Camera Module (v1.3 or v2) for visible light
+  - Caddx Infra 256CA for thermal imaging (256x192 LWIR)
 - 2x SG90 Micro Servos (or similar)
 - PCA9685 PWM Driver (optional, for better servo control)
-- 5V 2A Power Supply
+- 5V 2A Power Supply (3A recommended for thermal camera)
 - Gimbal Mount (3D printed or purchased)
+- For thermal camera: USB-to-Serial adapter or UART connection
 
 ## Software Requirements
 
@@ -94,12 +99,48 @@ A lightweight optical position stabilization system designed for Raspberry Pi Ze
 - **Control Update Rate**: 50Hz
 - **Power Consumption**: ~2.5W (active), ~1W (idle)
 
+## Thermal Camera Support (Caddx Infra 256CA)
+
+The system fully supports the Caddx Infra 256CA thermal camera, providing:
+
+### Features
+- 256x192 resolution LWIR thermal imaging
+- Temperature measurement and calibration
+- Multiple thermal colormaps (Ironbow, White Hot, Black Hot, etc.)
+- Hotspot detection and tracking
+- Thermal-optical fusion tracking
+- Temperature-based target detection
+
+### Setup
+1. **Connect Hardware**:
+   - Connect Caddx Infra 256CA via USB-Serial adapter to Pi
+   - Default port: `/dev/ttyUSB0` (or `/dev/ttyAMA0` for GPIO UART)
+
+2. **Enable Thermal Mode**:
+   ```bash
+   # Use thermal configuration
+   cp config/thermal.json config/config.json
+   # Or set in existing config:
+   # "use_thermal_camera": true
+   ```
+
+3. **Calibrate Thermal Camera**:
+   ```bash
+   python3 calibrate_thermal.py --all
+   ```
+
+### Thermal Tracking Modes
+- **Thermal Only**: Track hottest object in scene
+- **Hybrid**: Combine thermal and optical features (best performance)
+- **Temperature Threshold**: Track objects within specific temperature range
+
 ## Configuration
 
 Edit `config/config.json` to adjust:
 
-- Camera settings (resolution, framerate)
-- Tracking parameters (features, window size)
+- Camera settings (resolution, framerate, thermal/visible)
+- Thermal settings (port, colormap, temperature range)
+- Tracking parameters (features, window size, thermal weight)
 - PID gains (P, I, D for each axis)
 - Servo limits and calibration
 - System behavior (logging, monitoring)
