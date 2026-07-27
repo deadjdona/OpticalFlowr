@@ -5,7 +5,7 @@ Supports PMW3901 and Caddx Infra 256 optical flow sensors for position tracking
 
 import time
 import spidev
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +17,9 @@ try:
     CADDX_AVAILABLE = True
 except ImportError:
     CADDX_AVAILABLE = False
+    # Create a dummy class for type hinting if not available
+    class CaddxInfra256:
+        pass
     logger.warning("Caddx Infra 256 support not available")
 
 
@@ -165,13 +168,13 @@ class OpticalFlowTracker:
     Uses visual coordinate system (camera frame of reference)
     """
     
-    def __init__(self, sensor: PMW3901, scale_factor: float = 0.001, height_m: float = 0.5,
+    def __init__(self, sensor: Union[PMW3901, CaddxInfra256], scale_factor: float = 0.001, height_m: float = 0.5,
                  max_altitude: float = 50.0, altitude_source=None, use_visual_coords: bool = True):
         """
         Initialize optical flow tracker
         
         Args:
-            sensor: PMW3901 sensor instance
+            sensor: PMW3901 or CaddxInfra256 sensor instance
             scale_factor: Conversion factor from sensor units to meters
             height_m: Height above ground in meters (affects scale)
             max_altitude: Maximum supported altitude in meters
@@ -215,6 +218,7 @@ class OpticalFlowTracker:
         self.barometer_velocity_z = 0.0  # m/s vertical velocity
         self.use_barometer_velocity = False
         
+        self.height_filter_alpha = 0.2
         logger.info(f"OpticalFlowTracker initialized (visual_coords: {use_visual_coords})")
     
     def update(self) -> Tuple[float, float]:
@@ -239,6 +243,9 @@ class OpticalFlowTracker:
         # Adapt filter parameters based on altitude
         self._adapt_to_altitude()
         
+        # Allow sensors with onboard height estimates to adjust scale in real-time
+        self._update_height_from_sensor()
+
         # Get raw motion from sensor
         delta_x, delta_y = self.sensor.get_motion()
         
@@ -395,7 +402,37 @@ class OpticalFlowTracker:
         
         self.height_m = height_m
         logger.debug(f"Altitude updated to {height_m:.1f}m")
-    
+
+    def _update_height_from_sensor(self):
+        """Pull height estimate from sensor if supported (e.g. AI Box)."""
+        height_reader = getattr(self.sensor, 'get_height_estimate', None)
+        if not callable(height_reader):
+            return
+
+        try:
+            new_height = height_reader()
+        except Exception as exc:
+            logger.debug(f"Height estimate read failed: {exc}")
+            return
+
+        if new_height is None:
+            return
+
+        try:
+            new_height = float(new_height)
+        except (ValueError, TypeError):
+            return
+
+        if new_height <= 0.05:
+            return
+
+        if self.height_m <= 0:
+            self.height_m = new_height
+            return
+
+        alpha = self.height_filter_alpha
+        self.height_m = (1 - alpha) * self.height_m + alpha * new_height
+
     def get_surface_quality(self) -> int:
         """Get surface quality from sensor"""
         return self.sensor.get_surface_quality()

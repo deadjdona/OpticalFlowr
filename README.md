@@ -12,6 +12,7 @@ A complete optical flow-based position stabilization system for the Betafly dron
 
 - **🌐 Web Interface**: Beautiful real-time dashboard for monitoring and configuration (port 8080)
 - **📷 Multiple Camera Support**: PMW3901, USB cameras, CSI cameras, and analog FPV cameras
+- **🧠 AI Box Integration**: Native Caddx Infra 256CA + AI Box streaming over USB serial or TCP
 - **🎮 Manual Stick Inputs**: RC receiver integration with SBUS/PWM support and smooth blending
 - **🔧 Live Configuration**: Edit PID gains and settings through web GUI
 - **📊 Real-time Visualization**: Live position tracking and control output graphs
@@ -38,8 +39,9 @@ A complete optical flow-based position stabilization system for the Betafly dron
 - **Optical Flow Sensor** (choose one):
   - PMW3901 Optical Flow Sensor (SPI) - Pimoroni or similar
   - **Caddx Infra 256 (I2C)** - Recommended for production ⭐
-  - Caddx Infra 256CA (Analog CVBS) - Use with USB capture card
-  - USB/CSI/Analog Camera (for computer vision approach)
+- Caddx Infra 256CA (Analog CVBS) - Use with USB capture card
+- **Caddx Infra 256CA + AI Box (Serial/TCP)** - Plug-and-play streaming + live height feed
+- USB/CSI/Analog Camera (for computer vision approach)
 - **Flight Controller** (Betaflight, iNav, or ArduPilot compatible)
 - **Power Supply** (5V for Pi, shared with drone battery via BEC)
 
@@ -92,6 +94,20 @@ USB Capture Card -> Pi USB Port
 - ✅ Simple 3-wire connection (5V, GND, CVBS)
 
 **Important**: Ensure the sensor is mounted facing downward with adequate lighting for optical tracking.
+
+#### Option 3: Caddx Infra 256CA + AI Box
+```
+Caddx Infra 256CA -> AI Box -> Raspberry Pi Zero
+-----------------------------------------------
+Sensor ribbon     -> AI Box (factory cable)
+AI Box USB (5V)   -> Pi USB data port (serial streaming)
+AI Box Ethernet   -> (optional) Network switch / Pi (TCP streaming)
+```
+
+- Power the AI Box from a clean 5V supply (500mA+). USB from the Pi works for most setups.
+- For USB mode, a `/dev/ttyUSBx` device will appear; set `serial_port` accordingly.
+- For remote mounting, connect Ethernet/Wi-Fi and set `ai_box.tcp_host` + `ai_box.tcp_port` in `config.json`.
+- The AI Box streams delta X/Y, surface quality, and height. The driver auto-converts the height feed to meters using `ai_box.height_scale`.
 
 ## Software Installation
 
@@ -262,6 +278,26 @@ See **[GPS_EMULATION_GUIDE.md](GPS_EMULATION_GUIDE.md)** for complete setup inst
 # Edit config.json: "sensor": {"type": "analog_usb"}
 ./betafly_stabilizer_advanced.py --config config.json
 ```
+
+**Caddx Infra 256CA + AI Box:** Set `"sensor.type": "caddx_infra256ca"` and populate the nested `ai_box` block to match your wiring:
+
+```json
+"sensor": {
+  "type": "caddx_infra256ca",
+  "rotation": 0,
+  "ai_box": {
+    "connection": "auto",
+    "serial_port": "/dev/ttyUSB0",
+    "serial_baudrate": 921600,
+    "tcp_host": "",
+    "tcp_port": 8899,
+    "data_timeout": 0.25,
+    "height_scale": 1.0
+  }
+}
+```
+
+Use `connection="serial"` for USB tethering or set `tcp_host` to stream over Wi-Fi/Ethernet. The AI Box height feed is automatically fused into the tracker, so tune `height_scale` if the measured altitude does not match reality. All of these values are editable from the web interface under **Configuration → Sensor** when the new sensor type is selected.
 
 ### Command Line Options
 

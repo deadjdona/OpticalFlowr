@@ -49,6 +49,63 @@ SCL             -> Pin 5 (GPIO 3 / I2C SCL)
 - Avoid mounting near bright LEDs or heat sources
 - Keep lens clean and unobstructed
 
+## Caddx Infra 256CA + AI Box
+
+The Infra 256CA ships with an external AI Box that streams optical flow over USB serial or Ethernet/Wi-Fi. The new driver (`caddx_infra256ca.py`) consumes that stream directly—no I2C wiring required.
+
+### Connection Modes
+
+#### USB Serial (Recommended for bench setup)
+1. Power the AI Box from a 5V USB source (the Pi Zero’s USB data port works if your BEC can supply ~500 mA).
+2. Connect the AI Box USB data lead to the Pi. A new `/dev/ttyUSB*` device should appear:
+   ```bash
+   ls /dev/ttyUSB*
+   ```
+3. Update `config.json`:
+   ```json
+   "sensor": {
+     "type": "caddx_infra256ca",
+     "rotation": 0,
+     "ai_box": {
+       "connection": "serial",
+       "serial_port": "/dev/ttyUSB0",
+       "serial_baudrate": 921600,
+       "data_timeout": 0.25,
+       "height_scale": 1.0
+     }
+   }
+   ```
+
+#### TCP / Wi-Fi / Ethernet
+1. Connect the AI Box via Ethernet or join it to Wi-Fi.
+2. Find its IP address (DHCP lease table or the AI Box UI).
+3. Update `config.json`:
+   ```json
+   "sensor": {
+     "type": "caddx_infra256ca",
+     "ai_box": {
+       "connection": "tcp",
+       "tcp_host": "192.168.4.120",
+       "tcp_port": 8899,
+       "data_timeout": 0.25
+     }
+   }
+   ```
+
+### Height Feedback
+The AI Box stream includes an altitude estimate. The driver pushes this directly into the optical flow tracker so scale adjusts automatically in flight.
+
+- Use `ai_box.height_scale` if the raw value is in centimeters (e.g. `0.01` to convert cm → m).
+- Tweak `ai_box.height_smoothing` (default `0.2`) if the height feed is noisy.
+
+### Debug Tips
+- `screen /dev/ttyUSB0 921600` lets you read the raw serial stream.
+- `nc 192.168.4.120 8899` dumps the TCP stream (Ctrl+C to exit).
+- You should see JSON or CSV lines such as `{"dx":12,"dy":-4,"quality":180,"height":0.62}`.
+
+### Web Interface
+Select **Caddx Infra 256CA + AI Box** on the Sensor tab to edit the above settings without editing JSON. The UI exposes connection type, serial/TCP endpoints, timeouts, and height scaling.
+
 ## Software Installation
 
 ### 1. Enable I2C Interface

@@ -168,6 +168,7 @@
                         <select id="camera-type-select" onchange="updateCameraType()">
                             <option value="pmw3901">PMW3901 Optical Flow Sensor (SPI)</option>
                             <option value="caddx_infra256">Caddx Infra 256 (I2C)</option>
+                            <option value="caddx_infra256ca">Caddx Infra 256CA + AI Box</option>
                             <option value="usb_camera">USB Camera</option>
                             <option value="csi_camera">Raspberry Pi Camera (CSI)</option>
                             <option value="analog_usb">Analog Camera via USB</option>
@@ -177,6 +178,33 @@
                         <label>I2C Address (decimal)</label>
                         <input type="number" id="i2c-address" min="1" max="127" value="41">
                         <small>Default: 41 (0x29 hex)</small>
+                    </div>
+                    <div class="form-group ai-box-group" id="ai-box-connection-group" style="display:none;">
+                        <label>AI Box Connection</label>
+                        <select id="ai-box-connection" onchange="updateAIBoxConnectionFields()">
+                            <option value="auto">Auto (USB if host empty)</option>
+                            <option value="serial">USB Serial</option>
+                            <option value="tcp">Ethernet / Wi-Fi (TCP)</option>
+                        </select>
+                    </div>
+                    <div class="form-group ai-box-group" id="ai-box-serial-group" style="display:none;">
+                        <label>Serial Port</label>
+                        <input type="text" id="ai-box-serial-port" placeholder="/dev/ttyUSB0">
+                        <label>Serial Baudrate</label>
+                        <input type="number" id="ai-box-serial-baud" value="921600">
+                    </div>
+                    <div class="form-group ai-box-group" id="ai-box-network-group" style="display:none;">
+                        <label>AI Box Host/IP</label>
+                        <input type="text" id="ai-box-host" placeholder="192.168.4.120">
+                        <label>TCP Port</label>
+                        <input type="number" id="ai-box-port" value="8899">
+                    </div>
+                    <div class="form-group ai-box-group" id="ai-box-advanced-group" style="display:none;">
+                        <label>Data Timeout (seconds)</label>
+                        <input type="number" id="ai-box-timeout" step="0.05" value="0.25">
+                        <label>Height Scale</label>
+                        <input type="number" id="ai-box-height-scale" step="0.1" value="1.0">
+                        <small>Use to convert AI Box height units to meters</small>
                     </div>
                     <div class="form-group">
                         <label>Rotation (degrees)</label>
