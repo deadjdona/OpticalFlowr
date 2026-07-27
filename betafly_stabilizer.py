@@ -345,8 +345,12 @@ def main():
         # Set initial mode
         stabilizer.set_mode(args.mode)
         
-        # Start system
-        stabilizer.start()
+        try:
+            # Start system
+            stabilizer.start()
+        finally:
+            # Ensure proper cleanup
+            stabilizer.stop()
         
     except Exception as e:
         logger.error(f"Failed to start stabilizer: {e}", exc_info=True)

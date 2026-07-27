@@ -179,7 +179,7 @@ class ServoController:
         if self.pca and PCA9685_AVAILABLE:
             # PCA9685 uses 12-bit resolution (0-4095)
             # At 50Hz, each cycle is 20ms
-            pulse_ticks = int((pulse_ms / 20.0) * 4095)
+            pulse_ticks = round((pulse_ms / 20.0) * 4095)
             self.pca.channels[pin].duty_cycle = pulse_ticks
             
         elif self.pi and PIGPIO_AVAILABLE and self.pi.connected:

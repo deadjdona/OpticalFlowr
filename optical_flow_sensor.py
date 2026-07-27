@@ -351,7 +351,7 @@ class OpticalFlowTracker:
         self.tracking_confidence = quality_confidence * altitude_confidence
         
         # Log warnings for low confidence
-        if current_time := time.time() > self.last_quality_check + 5.0:
+        if (current_time := time.time()) > self.last_quality_check + 5.0:
             if self.tracking_confidence < 0.6:
                 logger.warning(
                     f"Low tracking confidence: {self.tracking_confidence:.2f} "
