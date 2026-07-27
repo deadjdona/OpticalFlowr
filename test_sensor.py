@@ -1,54 +1,85 @@
 #!/usr/bin/env python3
 """
-Test script for PMW3901 optical flow sensor
-Verifies sensor connection and displays motion data
+Test script for camera-based optical flow
+Verifies camera connection and displays optical flow data
 """
 
 import time
 import sys
 import argparse
-from optical_flow_sensor import PMW3901, OpticalFlowTracker
+from camera_optical_flow import CameraOpticalFlow, AnalogCameraFlow, OpticalFlowTracker, auto_detect_camera
 
-def test_basic_connection():
-    """Test basic sensor connection"""
-    print("Testing PMW3901 sensor connection...")
+def test_camera_detection():
+    """Test camera detection"""
+    print("Detecting cameras...")
     try:
-        sensor = PMW3901()
-        print("✓ Sensor initialized successfully")
-        
-        # Read product ID
-        product_id = sensor._read_register(sensor.REG_PRODUCT_ID)
-        print(f"✓ Product ID: 0x{product_id:02X}")
-        
+        camera_id = auto_detect_camera()
+        if camera_id is not None:
+            print(f"✓ Camera detected at ID: {camera_id}")
+            return camera_id
+        else:
+            print("✗ No camera detected")
+            print("\nTroubleshooting:")
+            print("  - Check camera cable connection")
+            print("  - Run: vcgencmd get_camera")
+            print("  - Run: ls /dev/video*")
+            sys.exit(1)
+    except Exception as e:
+        print(f"✗ Failed to detect camera: {e}")
+        sys.exit(1)
+
+def test_camera_initialization(camera_id=0):
+    """Test camera initialization"""
+    print(f"\nInitializing camera {camera_id}...")
+    try:
+        sensor = CameraOpticalFlow(
+            camera_id=camera_id,
+            width=320,
+            height=240,
+            fps=30,
+            method='lucas_kanade'  # Faster for testing
+        )
+        sensor.start()
+        time.sleep(1)  # Let camera warm up
+        print("✓ Camera initialized successfully")
         return sensor
     except Exception as e:
-        print(f"✗ Failed to initialize sensor: {e}")
+        print(f"✗ Failed to initialize camera: {e}")
         sys.exit(1)
 
 def test_motion_reading(sensor, duration=5):
-    """Test motion reading"""
-    print(f"\nReading motion data for {duration} seconds...")
-    print("Move the sensor to see motion values\n")
-    print("Time(s) | Delta X | Delta Y | Quality")
+    """Test optical flow motion reading"""
+    print(f"\nReading optical flow for {duration} seconds...")
+    print("Move the camera (or object below) to see motion values\n")
+    print("Time(s) | Flow X  | Flow Y  | Quality")
     print("-" * 45)
     
     start_time = time.time()
     while time.time() - start_time < duration:
-        delta_x, delta_y = sensor.get_motion()
+        flow_x, flow_y = sensor.get_motion()
         quality = sensor.get_surface_quality()
         elapsed = time.time() - start_time
         
-        print(f"{elapsed:6.2f}  | {delta_x:7d} | {delta_y:7d} | {quality:3d}    ", end='\r')
+        print(f"{elapsed:6.2f}  | {flow_x:7.2f} | {flow_y:7.2f} | {quality:3d}    ", end='\r')
         time.sleep(0.1)
     
     print("\n✓ Motion reading test complete")
 
-def test_position_tracking(duration=10):
+def test_position_tracking(camera_id=0, duration=10):
     """Test position tracking with integration"""
     print(f"\nTesting position tracking for {duration} seconds...")
-    print("Move the sensor to track position\n")
+    print("Move the camera to track position\n")
     
-    sensor = PMW3901()
+    sensor = CameraOpticalFlow(
+        camera_id=camera_id,
+        width=320,
+        height=240,
+        fps=30,
+        method='lucas_kanade'
+    )
+    sensor.start()
+    time.sleep(1)  # Camera warm-up
+    
     tracker = OpticalFlowTracker(sensor, scale_factor=0.001, height_m=0.5)
     
     print("Time(s) | Pos X(m) | Pos Y(m) | Vel X(m/s) | Vel Y(m/s) | Quality")
@@ -73,12 +104,12 @@ def test_position_tracking(duration=10):
     # Final position
     print(f"\nFinal position: ({pos_x:.4f}, {pos_y:.4f}) meters")
     
-    sensor.shutdown()
+    sensor.stop()
 
 def test_surface_quality(sensor, duration=5):
     """Monitor surface quality over time"""
     print(f"\nMonitoring surface quality for {duration} seconds...")
-    print("Quality values: 0-50 (poor), 50-150 (good), 150+ (excellent)\n")
+    print("Quality values: <100 (poor), 100-200 (good), >200 (excellent)\n")
     
     qualities = []
     start_time = time.time()
@@ -88,29 +119,48 @@ def test_surface_quality(sensor, duration=5):
         qualities.append(quality)
         elapsed = time.time() - start_time
         
-        print(f"Time: {elapsed:5.2f}s | Quality: {quality:3d} {'█' * (quality // 10)}", end='\r')
+        bar_length = min(quality // 5, 50)
+        print(f"Time: {elapsed:5.2f}s | Quality: {quality:3d} {'█' * bar_length}    ", end='\r')
         time.sleep(0.1)
     
     print("\n")
-    avg_quality = sum(qualities) / len(qualities)
-    min_quality = min(qualities)
-    max_quality = max(qualities)
+    avg_quality = sum(qualities) / len(qualities) if qualities else 0
+    min_quality = min(qualities) if qualities else 0
+    max_quality = max(qualities) if qualities else 0
     
     print(f"Average quality: {avg_quality:.1f}")
     print(f"Range: {min_quality} - {max_quality}")
     
-    if avg_quality < 50:
+    if avg_quality < 100:
         print("⚠️  Low quality - improve lighting or surface texture")
-    elif avg_quality < 150:
-        print("✓ Good quality")
+        print("    Tips:")
+        print("    - Ensure surface has visible texture (not blank)")
+        print("    - Check lighting conditions")
+        print("    - Clean camera lens")
+    elif avg_quality < 200:
+        print("✓ Good quality - suitable for tracking")
     else:
-        print("✓ Excellent quality")
+        print("✓ Excellent quality - optimal for tracking")
+
+def test_camera_capture(sensor):
+    """Test camera frame capture"""
+    print("\nTesting camera frame capture...")
+    try:
+        frame = sensor.get_current_frame()
+        if frame is not None:
+            print(f"✓ Frame captured successfully")
+            print(f"  Resolution: {frame.shape[1]}x{frame.shape[0]}")
+            print(f"  Channels: {frame.shape[2] if len(frame.shape) > 2 else 1}")
+        else:
+            print("✗ Failed to capture frame")
+    except Exception as e:
+        print(f"✗ Frame capture error: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Test PMW3901 optical flow sensor')
+    parser = argparse.ArgumentParser(description='Test camera-based optical flow')
     parser.add_argument(
         '-t', '--test',
-        choices=['connection', 'motion', 'tracking', 'quality', 'all'],
+        choices=['detection', 'motion', 'tracking', 'quality', 'capture', 'all'],
         default='all',
         help='Test to run'
     )
@@ -120,19 +170,41 @@ def main():
         default=5,
         help='Test duration in seconds'
     )
+    parser.add_argument(
+        '-c', '--camera',
+        type=int,
+        default=None,
+        help='Camera ID (auto-detect if not specified)'
+    )
     
     args = parser.parse_args()
     
     print("=" * 50)
-    print("PMW3901 Optical Flow Sensor Test")
+    print("Camera-Based Optical Flow Test")
     print("=" * 50)
     print()
     
     try:
-        if args.test in ['connection', 'all']:
-            sensor = test_basic_connection()
+        # Detect or use specified camera
+        if args.camera is None:
+            if args.test in ['detection', 'all']:
+                camera_id = test_camera_detection()
+            else:
+                camera_id = auto_detect_camera()
+                if camera_id is None:
+                    print("✗ No camera detected. Specify with -c option.")
+                    sys.exit(1)
         else:
-            sensor = PMW3901()
+            camera_id = args.camera
+            print(f"Using specified camera ID: {camera_id}")
+        
+        # Initialize camera for tests
+        if args.test not in ['detection', 'tracking']:
+            sensor = test_camera_initialization(camera_id)
+        
+        # Run tests
+        if args.test in ['capture', 'all']:
+            test_camera_capture(sensor)
         
         if args.test in ['motion', 'all']:
             test_motion_reading(sensor, args.duration)
@@ -141,11 +213,11 @@ def main():
             test_surface_quality(sensor, args.duration)
         
         if args.test in ['tracking', 'all']:
-            if args.test == 'all':
-                sensor.shutdown()
-            test_position_tracking(args.duration * 2)
-        else:
-            sensor.shutdown()
+            if args.test != 'tracking':
+                sensor.stop()
+            test_position_tracking(camera_id, args.duration * 2)
+        elif args.test not in ['detection']:
+            sensor.stop()
         
         print("\n" + "=" * 50)
         print("All tests passed!")
